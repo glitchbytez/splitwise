@@ -70,4 +70,24 @@ public abstract class ApiIntegrationTest {
         register(email, "Test User", DEFAULT_PASSWORD);
         return login(email, DEFAULT_PASSWORD);
     }
+
+    protected static UUID createGroup(String token, String name) {
+        String id = authenticated(token)
+                .body(Map.of("name", name))
+                .post("/api/groups")
+                .then().statusCode(201)
+                .extract().path("id");
+        return UUID.fromString(id);
+    }
+
+    protected static void addMember(String token, UUID groupId, String email) {
+        authenticated(token)
+                .body(Map.of("email", email))
+                .post("/api/groups/{groupId}/members", groupId)
+                .then().statusCode(201);
+    }
+
+    protected static UUID userIdOf(String token) {
+        return UUID.fromString(authenticated(token).get("/api/users/me").then().extract().path("id"));
+    }
 }
