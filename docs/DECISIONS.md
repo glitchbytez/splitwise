@@ -69,3 +69,32 @@ A JWT stays valid until it expires, so every "who is calling" lookup goes throug
 
 ### D17. No Lombok yet
 The `User` entity has a handful of hand-written getters, which is less than the cost of an annotation processor. Lombok can be introduced when entities grow (spec section 2 allows it for getters only).
+
+## Phase 2 — Groups and members
+
+### D18. Non-members get 403; unknown or deleted groups get 404
+This follows the spec's error examples ("403 not a group member"). `GroupAccessService` checks in a fixed order: the group must exist and not be deleted (404), the caller must be an active member (403), and owner-only actions need the owner (403). A 404-for-everything approach would hide which groups exist, but group ids are random UUIDs, so they can't be enumerated anyway. `GroupAuthorizationIT` runs every group endpoint as an outsider, a plain member and an owner, and must be extended as new group-scoped endpoints are added.
+
+### D19. Who may do what
+- **Any member** can add people by email. The spec only restricts rename, remove and delete, and this matches how Splitwise works.
+- **Owner only:** rename or re-describe the group, remove other members, delete the group.
+- **The owner cannot leave** (409). v1 has no ownership transfer, so an owner who leaves would leave the group without an owner. The owner deletes the group instead.
+- Re-adding a former member reactivates their existing `group_members` row as `MEMBER` (see D5) instead of inserting a duplicate.
+
+### D20. Member lists show display names, not emails
+`GET /api/groups/{id}` lists members by user id, display name, role and join date. Other members' emails are personal data the UI doesn't need (data minimisation). The person adding someone already knows that email.
+
+### D21. Balance rule behind an interface (`MemberBalances`)
+Leaving or removing a member requires a zero balance (spec 3.2). The group feature depends only on the `group.MemberBalances` interface, and `balance.BalanceService` implements it. There are no expenses or settlements yet, so every balance is genuinely zero and the implementation returns `true`. **Phase 4 must replace this with the real derivation** (spec 4.3), and should apply the same check to account deletion (D16). Unit tests already cover the 409 paths with a mocked `MemberBalances`.
+
+### D22. Activity entries are written from Phase 2 onwards
+Membership and group lifecycle changes (`GROUP_CREATED`, `GROUP_UPDATED`, `GROUP_DELETED`, `MEMBER_ADDED`, `MEMBER_REMOVED`, `MEMBER_LEFT`) are written to `activity_log` in the same transaction as the change. `ActivityService.record` uses `Propagation.MANDATORY`, so it cannot be called outside one. Payloads hold ids only, never emails or names. The read endpoint `GET /api/groups/{id}/activity` comes with the expense work.
+
+### D23. Deleting a group is a soft delete and is allowed with open balances
+The owner can always delete. The row and its history stay (`deleted_at`), and the group disappears for every member. Blocking deletion until everyone is settled is a possible v2 rule.
+
+### D24. List endpoints whitelist sort properties and cap page size
+`?sort=` accepts only documented properties (groups: `name`, `createdAt`). Anything else returns 400 instead of a 500 from an unknown property. `spring.data.web.pageable.max-page-size` is 100.
+
+### D25. JPA entity name `ExpenseGroup`
+`GROUP` is a reserved word in JPQL, so the `Group` class is registered as entity `ExpenseGroup`. The table is still `groups`.
