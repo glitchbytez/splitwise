@@ -5,6 +5,11 @@ spring:
     username: ${DB_USER:splitwise}
     password: ${DB_PASSWORD:splitwise}
 
+app:
+  jwt:
+    # Development-only fallback so the app starts without a .env file. Never use it outside local dev.
+    secret: ${JWT_SECRET:local-development-only-jwt-secret-change-me}
+
 logging:
   level:
     com.glitchbytez.splitwise: DEBUG

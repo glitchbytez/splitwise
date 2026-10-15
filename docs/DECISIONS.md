@@ -42,3 +42,30 @@ Fast unit tests run in the `test` phase. Spring Boot + Testcontainers tests are 
 
 ### D10. `Money` keeps the currency's fraction digits and never rounds
 `Money.parse("12.345")` is rejected instead of rounded. Silent rounding at the API boundary would make shares stop summing to the total. Arithmetic uses `Math.*Exact`, so overflow throws an exception instead of wrapping around.
+
+## Phase 1 — Auth and users
+
+### D11. JWTs via Spring Security's OAuth2 resource server, signed with HS256
+Tokens are validated by `spring-boot-starter-security-oauth2-resource-server` (Nimbus JOSE under the hood) and issued with its `JwtEncoder`. This stays inside the Spring Security stack the spec mandates, so there is no hand-written token filter and no extra JWT library such as jjwt. The API both issues and validates its own tokens, so a symmetric HS256 key from `JWT_SECRET` is enough. The app refuses to start if the secret is shorter than 32 bytes.
+- Claims: `iss`, `sub` (the user id), `iat`, `exp` and `jti`. There is deliberately no email or name, because a JWT is only signed, not encrypted.
+- The decoder checks the signature, expiry (with 60 s clock skew) and issuer. Tokens with `alg: none` are rejected.
+- Access tokens last 30 minutes (`app.jwt.access-token-ttl`). Refresh tokens are a Phase 7 item.
+- 401 responses carry the RFC 6750 `WWW-Authenticate: Bearer ...` header plus the usual `ProblemDetail` body. Spring Security 7 also serves RFC 9728 metadata at `/.well-known/oauth-protected-resource` and links to it from that header. It holds no secrets, so it is left on.
+
+### D12. Login does not reveal which emails are registered
+An unknown email and a wrong password both return `401 "Invalid email or password"`. When the email is unknown, the password is still compared against a dummy BCrypt hash, so response time doesn't give it away either. Registration does reveal that an email is taken (`409`), as the spec requires. Rate limiting login is a stretch goal (spec section 7).
+
+### D13. Password rules
+Passwords must be at least 8 characters and at most 72 **bytes**. BCrypt ignores everything after 72 bytes, and Spring Security 7 throws on longer input, so the limit is checked in UTF-8 bytes, not characters. BCrypt strength is 12. Request records and `TokenResponse` override `toString()` so passwords and tokens can't reach a log line, and `User.toString()` prints only the id.
+
+### D14. `@CurrentUserId` instead of passing `Jwt` around
+Controllers receive the caller's id as `@CurrentUserId UUID userId`, resolved from the validated token, and the parameter is hidden from the OpenAPI docs. A signed token whose subject is not a UUID is rejected with 401.
+
+### D15. Tokens of deleted accounts
+A JWT stays valid until it expires, so every "who is calling" lookup goes through `findByIdAndDeletedAtIsNull`. After account deletion the old token gets `404 User not found` on `/api/users/me`, and login fails because the password hash has been removed. A deny-list for revoked tokens isn't worth it with a 30-minute lifetime.
+
+### D16. Account deletion does not yet check balances (follow-up for Phase 4)
+`DELETE /api/users/me` anonymises the account immediately. Once groups and balances exist, deletion should be blocked (409) while the user has a non-zero balance in any group, the same rule as leaving a group (spec 3.2). This must be added in Phase 4, when balances are derived.
+
+### D17. No Lombok yet
+The `User` entity has a handful of hand-written getters, which is less than the cost of an annotation processor. Lombok can be introduced when entities grow (spec section 2 allows it for getters only).

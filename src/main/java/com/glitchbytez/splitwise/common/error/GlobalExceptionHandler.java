@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -35,6 +36,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(ApiException.class)
     ProblemDetail handleApiException(ApiException ex) {
         return problem(ex.getStatus(), ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidBearerTokenException.class)
+    ProblemDetail handleInvalidToken(InvalidBearerTokenException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, "The access token is invalid or has expired");
     }
 
     @ExceptionHandler(AuthenticationException.class)
