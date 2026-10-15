@@ -28,7 +28,8 @@ services:
       DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-splitwise}
       DB_USER: ${POSTGRES_USER:-splitwise}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-splitwise}
-      JWT_SECRET: ${JWT_SECRET:-}
+      # Falls back to a development-only secret when JWT_SECRET is unset or empty.
+      JWT_SECRET: ${JWT_SECRET:-local-development-only-jwt-secret-change-me}
     ports:
       - "${APP_PORT:-8080}:8080"
 

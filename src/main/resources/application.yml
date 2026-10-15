@@ -18,6 +18,13 @@ spring:
     problemdetails:
       enabled: true
 
+app:
+  jwt:
+    # Required; no default outside the local/test profiles. At least 32 bytes.
+    secret: ${JWT_SECRET}
+    issuer: splitwise
+    access-token-ttl: 30m
+
 server:
   error:
     include-stacktrace: never

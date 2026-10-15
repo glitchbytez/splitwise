@@ -3,3 +3,7 @@ logging:
   level:
     root: WARN
     com.glitchbytez.splitwise: INFO
+
+app:
+  jwt:
+    secret: integration-test-jwt-secret-at-least-32-bytes

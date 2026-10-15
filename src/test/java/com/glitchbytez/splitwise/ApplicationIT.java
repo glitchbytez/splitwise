@@ -6,28 +6,13 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 
-import com.glitchbytez.splitwise.support.TestcontainersConfiguration;
-import io.restassured.RestAssured;
-import org.junit.jupiter.api.BeforeEach;
+import java.util.List;
+
+import com.glitchbytez.splitwise.support.ApiIntegrationTest;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.context.annotation.Import;
-import org.springframework.test.context.ActiveProfiles;
 
-/** Boots the whole application on a random port against PostgreSQL and checks the Phase 0 surface. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestcontainersConfiguration.class)
-@ActiveProfiles("test")
-class ApplicationIT {
-
-    @LocalServerPort
-    int port;
-
-    @BeforeEach
-    void setUp() {
-        RestAssured.port = port;
-    }
+/** Checks the application-wide surface: health, API docs and the default-deny security posture. */
+class ApplicationIT extends ApiIntegrationTest {
 
     @Test
     void healthEndpointIsPublicAndUp() {
@@ -60,6 +45,15 @@ class ApplicationIT {
                 .then().statusCode(200)
                 .body("info.title", equalTo("Splitwise API"))
                 .body("components.securitySchemes.bearerAuth.scheme", equalTo("bearer"));
+    }
+
+    @Test
+    void openApiDocumentsAuthEndpointsAsPublicAndHidesTheInjectedUserId() {
+        given()
+                .when().get("/v3/api-docs")
+                .then().statusCode(200)
+                .body("paths.'/api/auth/login'.post.security", equalTo(List.of()))
+                .body("paths.'/api/users/me'.get.parameters", nullValue());
     }
 
     @Test
