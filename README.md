@@ -13,8 +13,8 @@ The full specification is in [`docs/SPEC.md`](docs/SPEC.md). Decisions that are 
 |---|---|---|
 | 0 | Foundation: skeleton, Flyway V1 schema, Docker Compose, CI, `Money`, error handling | ✅ Done |
 | 1 | Auth and users (register, login, JWT) | ✅ Done |
-| 2 | Groups and members | ⏳ Next |
-| 3 | Expenses and split strategies | — |
+| 2 | Groups and members | ✅ Done |
+| 3 | Expenses and split strategies | ⏳ Next |
 | 4 | Balances, settlements, debt simplification | — |
 | 5 | Hardening and docs | — |
 | 6 | Azure deployment | — |
@@ -26,6 +26,9 @@ The full specification is in [`docs/SPEC.md`](docs/SPEC.md). Decisions that are 
 - **Errors:** every error is an RFC 7807 `application/problem+json` body, and validation errors include a per-field `errors` array.
 - **Auth:** register and log in to get a 30-minute JWT access token (HS256). Every other `/api` endpoint requires `Authorization: Bearer <token>` and returns 401 without a valid one.
 - **Users:** view and update your own profile, or delete your account. Deletion anonymises the account: email, name and password hash are removed, but expense history is kept.
+- **Groups:** create a group and become its owner, list your groups (paginated and sortable), and view a group with its members. Only the owner can rename or delete a group (deletion is soft).
+- **Members:** any member can add a registered user by email. The owner can remove members, and members can leave, but only with a zero balance. Unknown emails return 404 and existing members return 409.
+- **Access control:** a single `GroupAccessService` decides access. Non-members get 403 on every group endpoint, and owner-only actions return 403 for plain members. Group changes are written to the activity log.
 - **Personal data:** passwords are stored only as BCrypt hashes (strength 12) and are never returned or logged. Logs reference user ids only. Login gives the same response for an unknown email and a wrong password.
 - **API docs:** Swagger UI at `/swagger-ui.html` and the OpenAPI document at `/v3/api-docs`.
 - **Health:** `/actuator/health` is the only actuator endpoint exposed.
@@ -71,6 +74,13 @@ In Swagger UI, call `/api/auth/login`, then click **Authorize** and paste the `a
 | GET | `/api/users/me` | bearer | My profile |
 | PATCH | `/api/users/me` | bearer | Change display name |
 | DELETE | `/api/users/me` | bearer | Delete (anonymise) my account |
+| POST | `/api/groups` | bearer | Create a group (caller becomes `OWNER`) |
+| GET | `/api/groups?page=&size=&sort=` | bearer | My groups (sort: `name`, `createdAt`) |
+| GET | `/api/groups/{groupId}` | member | Group details and members |
+| PATCH | `/api/groups/{groupId}` | owner | Rename / change description |
+| DELETE | `/api/groups/{groupId}` | owner | Delete group (soft) |
+| POST | `/api/groups/{groupId}/members` | member | Add a registered user by `email` |
+| DELETE | `/api/groups/{groupId}/members/{userId}` | owner / self | Remove a member, or leave (your own id) |
 
 ### Configuration
 | Variable | Purpose |
@@ -91,7 +101,10 @@ In Swagger UI, call `/api/auth/login`, then click **Authorize** and paste the `a
 src/main/java/com/glitchbytez/splitwise
 ├── auth/        register/login, JWT issuing + validation, security config, @CurrentUserId
 ├── user/        User entity, profile endpoints, account deletion (anonymisation)
-├── group/  expense/  settlement/  balance/  activity/   (upcoming phases)
+├── group/       groups, memberships, GroupAccessService (authorisation)
+├── activity/    activity log writer
+├── balance/     balance rules (derivation arrives in Phase 4)
+├── expense/  settlement/   (upcoming phases)
 └── common/
     ├── money/   Money value object
     ├── error/   ApiException hierarchy + GlobalExceptionHandler (ProblemDetail)
