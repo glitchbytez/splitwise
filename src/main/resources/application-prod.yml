@@ -1,0 +1,4 @@
+# Production. All connection details and secrets come from environment variables; there are no defaults.
+logging:
+  level:
+    root: INFO

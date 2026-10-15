@@ -1,0 +1,5 @@
+# Integration tests. The datasource is supplied by Testcontainers via @ServiceConnection.
+logging:
+  level:
+    root: WARN
+    com.glitchbytez.splitwise: INFO

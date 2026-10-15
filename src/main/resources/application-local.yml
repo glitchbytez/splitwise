@@ -1,0 +1,10 @@
+# Local development. Defaults match docker-compose.yml; override with DB_URL / DB_USER / DB_PASSWORD.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/splitwise}
+    username: ${DB_USER:splitwise}
+    password: ${DB_PASSWORD:splitwise}
+
+logging:
+  level:
+    com.glitchbytez.splitwise: DEBUG
