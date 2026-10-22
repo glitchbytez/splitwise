@@ -6,5 +6,8 @@ public enum ActivityType {
     GROUP_DELETED,
     MEMBER_ADDED,
     MEMBER_REMOVED,
-    MEMBER_LEFT
+    MEMBER_LEFT,
+    EXPENSE_ADDED,
+    EXPENSE_UPDATED,
+    EXPENSE_DELETED
 }

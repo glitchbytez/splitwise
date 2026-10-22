@@ -5,9 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
+import com.glitchbytez.splitwise.common.error.BadRequestException;
 import com.glitchbytez.splitwise.common.error.ForbiddenException;
 import com.glitchbytez.splitwise.common.error.NotFoundException;
 import org.junit.jupiter.api.Test;
@@ -75,6 +78,24 @@ class GroupAccessServiceTest {
         when(members.findActive(GROUP_ID, USER_ID)).thenReturn(Optional.of(owner));
 
         assertThat(access.requireOwner(GROUP_ID, USER_ID)).isSameAs(owner);
+    }
+
+    @Test
+    void requireAllMembersAcceptsActiveMembers() {
+        UUID other = UUID.randomUUID();
+        when(members.findActiveMemberIds(GROUP_ID)).thenReturn(Set.of(USER_ID, other));
+
+        access.requireAllMembers(GROUP_ID, List.of(USER_ID, other, USER_ID));
+    }
+
+    @Test
+    void requireAllMembersNamesEveryOutsiderOnce() {
+        UUID outsider = UUID.fromString("00000000-0000-0000-0000-000000000009");
+        when(members.findActiveMemberIds(GROUP_ID)).thenReturn(Set.of(USER_ID));
+
+        assertThatThrownBy(() -> access.requireAllMembers(GROUP_ID, List.of(USER_ID, outsider, outsider)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Not members of this group: " + outsider);
     }
 
     private void givenGroupExists() {

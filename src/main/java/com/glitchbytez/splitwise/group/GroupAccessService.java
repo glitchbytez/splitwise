@@ -1,7 +1,11 @@
 package com.glitchbytez.splitwise.group;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
+import com.glitchbytez.splitwise.common.error.BadRequestException;
 import com.glitchbytez.splitwise.common.error.ForbiddenException;
 import com.glitchbytez.splitwise.common.error.NotFoundException;
 import org.springframework.stereotype.Service;
@@ -44,6 +48,24 @@ public class GroupAccessService {
             throw new ForbiddenException(OWNER_ONLY);
         }
         return member;
+    }
+
+    /**
+     * For request data that names other users (payer, participants, settlement parties): every one of them must
+     * be an active member. A violation is a client input error (400), not an access problem.
+     */
+    @Transactional(readOnly = true)
+    public void requireAllMembers(UUID groupId, Collection<UUID> userIds) {
+        Set<UUID> activeMembers = members.findActiveMemberIds(groupId);
+        List<String> outsiders = userIds.stream()
+                .filter(id -> !activeMembers.contains(id))
+                .distinct()
+                .map(UUID::toString)
+                .sorted()
+                .toList();
+        if (!outsiders.isEmpty()) {
+            throw new BadRequestException("Not members of this group: " + String.join(", ", outsiders));
+        }
     }
 
     @Transactional(readOnly = true)
