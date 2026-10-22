@@ -14,8 +14,8 @@ The full specification is in [`docs/SPEC.md`](docs/SPEC.md). Decisions that are 
 | 0 | Foundation: skeleton, Flyway V1 schema, Docker Compose, CI, `Money`, error handling | ✅ Done |
 | 1 | Auth and users (register, login, JWT) | ✅ Done |
 | 2 | Groups and members | ✅ Done |
-| 3 | Expenses and split strategies | ⏳ Next |
-| 4 | Balances, settlements, debt simplification | — |
+| 3 | Expenses and split strategies | ✅ Done |
+| 4 | Balances, settlements, debt simplification | ⏳ Next |
 | 5 | Hardening and docs | — |
 | 6 | Azure deployment | — |
 
@@ -28,6 +28,9 @@ The full specification is in [`docs/SPEC.md`](docs/SPEC.md). Decisions that are 
 - **Users:** view and update your own profile, or delete your account. Deletion anonymises the account: email, name and password hash are removed, but expense history is kept.
 - **Groups:** create a group and become its owner, list your groups (paginated and sortable), and view a group with its members. Only the owner can rename or delete a group (deletion is soft).
 - **Members:** any member can add a registered user by email. The owner can remove members, and members can leave, but only with a zero balance. Unknown emails return 404 and existing members return 409.
+- **Expenses:** add, view, replace (PUT) and soft-delete expenses with `EQUAL`, `EXACT` or `PERCENTAGE` splits. Shares always sum exactly to the total: leftover cents go to participants in user-id order (equal) or by largest remainder (percentage). The payer and participants must be group members. Concurrent edits are caught with a `version` check (409).
+- **Expense search:** paginated list with filters for payer, category, date range and description text, sortable by `date`, `amount` or `createdAt`.
+- **Activity feed:** `GET /api/groups/{id}/activity` shows expense, membership and group changes, newest first.
 - **Access control:** a single `GroupAccessService` decides access. Non-members get 403 on every group endpoint, and owner-only actions return 403 for plain members. Group changes are written to the activity log.
 - **Personal data:** passwords are stored only as BCrypt hashes (strength 12) and are never returned or logged. Logs reference user ids only. Login gives the same response for an unknown email and a wrong password.
 - **API docs:** Swagger UI at `/swagger-ui.html` and the OpenAPI document at `/v3/api-docs`.
@@ -81,6 +84,26 @@ In Swagger UI, call `/api/auth/login`, then click **Authorize** and paste the `a
 | DELETE | `/api/groups/{groupId}` | owner | Delete group (soft) |
 | POST | `/api/groups/{groupId}/members` | member | Add a registered user by `email` |
 | DELETE | `/api/groups/{groupId}/members/{userId}` | owner / self | Remove a member, or leave (your own id) |
+| GET | `/api/groups/{groupId}/activity?page=&size=` | member | Activity feed, newest first |
+| POST | `/api/groups/{groupId}/expenses` | member | Add an expense |
+| GET | `/api/groups/{groupId}/expenses?paidBy=&category=&from=&to=&q=&page=&size=&sort=` | member | List / filter expenses (sort: `date`, `amount`, `createdAt`) |
+| GET | `/api/groups/{groupId}/expenses/{expenseId}` | member | Expense with its shares |
+| PUT | `/api/groups/{groupId}/expenses/{expenseId}` | member | Replace an expense (send its `version`) |
+| DELETE | `/api/groups/{groupId}/expenses/{expenseId}` | member | Delete an expense (soft) |
+
+Create-expense example (spec section 8):
+```json
+{
+  "description": "Dinner", "amount": "90.00", "date": "2026-10-10",
+  "paidBy": "<user-uuid>", "category": "FOOD", "splitType": "PERCENTAGE",
+  "participants": [
+    { "userId": "<uuid-a>", "percentage": "50.00" },
+    { "userId": "<uuid-b>", "percentage": "30.00" },
+    { "userId": "<uuid-c>", "percentage": "20.00" }
+  ]
+}
+```
+For `EQUAL`, participants carry only `userId`; for `EXACT`, each has an `amount`.
 
 ### Configuration
 | Variable | Purpose |
@@ -102,9 +125,11 @@ src/main/java/com/glitchbytez/splitwise
 ├── auth/        register/login, JWT issuing + validation, security config, @CurrentUserId
 ├── user/        User entity, profile endpoints, account deletion (anonymisation)
 ├── group/       groups, memberships, GroupAccessService (authorisation)
-├── activity/    activity log writer
-├── balance/     balance rules (derivation arrives in Phase 4)
-├── expense/  settlement/   (upcoming phases)
+├── activity/    activity log (write + feed)
+├── expense/     expenses, filters, optimistic locking
+│   └── split/   SplitStrategy: Equal / Exact / Percentage (pure Java)
+├── balance/     balance derivation (expenses now; settlements in Phase 4)
+├── settlement/  (Phase 4)
 └── common/
     ├── money/   Money value object
     ├── error/   ApiException hierarchy + GlobalExceptionHandler (ProblemDetail)

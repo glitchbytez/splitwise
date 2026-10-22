@@ -7,3 +7,6 @@ logging:
 app:
   jwt:
     secret: integration-test-jwt-secret-at-least-32-bytes
+  security:
+    # Minimum BCrypt cost: hashing is not what these tests verify, and strength 12 makes them several times slower.
+    bcrypt-strength: 4

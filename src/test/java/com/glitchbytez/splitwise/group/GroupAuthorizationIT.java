@@ -1,6 +1,7 @@
 package com.glitchbytez.splitwise.group;
 
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.nullValue;
 
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -24,6 +25,7 @@ class GroupAuthorizationIT extends ApiIntegrationTest {
     UUID ownerId;
     UUID memberId;
     UUID groupId;
+    UUID expenseId;
 
     @BeforeEach
     void setUp() {
@@ -35,11 +37,30 @@ class GroupAuthorizationIT extends ApiIntegrationTest {
         memberId = userIdOf(member);
         groupId = createGroup(owner, "Private");
         addMember(owner, groupId, "member@example.com");
+        expenseId = UUID.fromString(authenticated(owner).body(expenseBody(ownerId, null))
+                .post("/api/groups/{g}/expenses", groupId)
+                .then().statusCode(201).extract().path("id"));
     }
 
-    /** {@code {member}} and {@code {owner}} placeholders are replaced with the corresponding user ids. */
+    private static String expenseBody(UUID payer, Integer version) {
+        return """
+                {"description": "Taxi", "amount": "10.00", "date": "2026-10-10", "paidBy": "%s",
+                 "splitType": "EQUAL", "participants": [{"userId": "%s"}]%s}
+                """.formatted(payer, payer, version == null ? "" : ", \"version\": " + version);
+    }
+
+    /**
+     * {@code {member}}, {@code {owner}} and {@code {expense}} placeholders are replaced with the corresponding ids;
+     * {@code BODY_EXPENSE} with a valid expense body.
+     */
     static Stream<Arguments> allGroupEndpoints() {
         return Stream.of(
+                Arguments.of(Method.GET, "/api/groups/{groupId}/activity", "{}"),
+                Arguments.of(Method.POST, "/api/groups/{groupId}/expenses", BODY_EXPENSE),
+                Arguments.of(Method.GET, "/api/groups/{groupId}/expenses", "{}"),
+                Arguments.of(Method.GET, "/api/groups/{groupId}/expenses/{expense}", "{}"),
+                Arguments.of(Method.PUT, "/api/groups/{groupId}/expenses/{expense}", BODY_EXPENSE),
+                Arguments.of(Method.DELETE, "/api/groups/{groupId}/expenses/{expense}", "{}"),
                 Arguments.of(Method.GET, "/api/groups/{groupId}", "{}"),
                 Arguments.of(Method.PATCH, "/api/groups/{groupId}", "{\"name\": \"Hijacked\"}"),
                 Arguments.of(Method.DELETE, "/api/groups/{groupId}", "{}"),
@@ -55,10 +76,12 @@ class GroupAuthorizationIT extends ApiIntegrationTest {
                 Arguments.of(Method.DELETE, "/api/groups/{groupId}/members/{owner}", "{}"));
     }
 
+    private static final String BODY_EXPENSE = "BODY_EXPENSE";
+
     @ParameterizedTest(name = "{0} {1}")
     @MethodSource("allGroupEndpoints")
     void nonMembersAreForbidden(Method method, String path, String body) {
-        authenticated(outsider).body(body).request(method, resolve(path))
+        authenticated(outsider).body(resolveBody(body)).request(method, resolve(path))
                 .then().statusCode(403)
                 .contentType("application/problem+json")
                 .body("detail", equalTo("You are not a member of this group"));
@@ -69,10 +92,11 @@ class GroupAuthorizationIT extends ApiIntegrationTest {
     @ParameterizedTest(name = "{0} {1}")
     @MethodSource("allGroupEndpoints")
     void unknownGroupsAreNotFound(Method method, String path, String body) {
-        authenticated(owner).body(body).request(method, path
+        authenticated(owner).body(resolveBody(body)).request(method, path
                         .replace("{groupId}", UUID.randomUUID().toString())
                         .replace("{member}", memberId.toString())
-                        .replace("{owner}", ownerId.toString()))
+                        .replace("{owner}", ownerId.toString())
+                        .replace("{expense}", expenseId.toString()))
                 .then().statusCode(404)
                 .body("detail", equalTo("Group not found"));
     }
@@ -90,7 +114,12 @@ class GroupAuthorizationIT extends ApiIntegrationTest {
     private String resolve(String path) {
         return path.replace("{groupId}", groupId.toString())
                 .replace("{member}", memberId.toString())
-                .replace("{owner}", ownerId.toString());
+                .replace("{owner}", ownerId.toString())
+                .replace("{expense}", expenseId.toString());
+    }
+
+    private String resolveBody(String body) {
+        return BODY_EXPENSE.equals(body) ? expenseBody(ownerId, 0) : body;
     }
 
     private void assertGroupUntouched() {
@@ -98,5 +127,12 @@ class GroupAuthorizationIT extends ApiIntegrationTest {
                 .then().statusCode(200)
                 .body("name", equalTo("Private"))
                 .body("members.size()", equalTo(2));
+        authenticated(owner).get("/api/groups/{g}/expenses", groupId)
+                .then().statusCode(200)
+                .body("totalElements", equalTo(1))
+                .body("content[0].version", nullValue());
+        authenticated(owner).get("/api/groups/{g}/expenses/{e}", groupId, expenseId)
+                .then().statusCode(200)
+                .body("version", equalTo(0));
     }
 }

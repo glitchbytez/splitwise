@@ -160,6 +160,34 @@ class GroupApiIT extends ApiIntegrationTest {
     }
 
     @Nested
+    class ActivityFeed {
+
+        @Test
+        void listsGroupEventsNewestFirstWithPagination() {
+            registerAndLogin("bob@example.com");
+            UUID groupId = createGroup(alice, "Trip");
+            addMember(alice, groupId, "bob@example.com");
+            authenticated(alice).body(Map.of("name", "Trip 2026")).patch("/api/groups/{id}", groupId)
+                    .then().statusCode(200);
+
+            authenticated(alice).queryParam("size", 2).get("/api/groups/{id}/activity", groupId)
+                    .then().statusCode(200)
+                    .body("totalElements", equalTo(3))
+                    .body("content.type", contains("GROUP_UPDATED", "MEMBER_ADDED"))
+                    .body("content[0].actorId", equalTo(aliceId.toString()))
+                    .body("content[0].payload.changed", contains("name"));
+        }
+
+        @Test
+        void hasAFixedOrder() {
+            UUID groupId = createGroup(alice, "Trip");
+
+            authenticated(alice).queryParam("sort", "type").get("/api/groups/{id}/activity", groupId)
+                    .then().statusCode(400);
+        }
+    }
+
+    @Nested
     class GetUpdateDelete {
 
         @Test

@@ -3,6 +3,7 @@ package com.glitchbytez.splitwise.group;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -16,6 +17,9 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, GroupM
             where m.id.groupId = :groupId and m.id.userId = :userId and m.leftAt is null
             """)
     Optional<GroupMember> findActive(@Param("groupId") UUID groupId, @Param("userId") UUID userId);
+
+    @Query("select m.id.userId from GroupMember m where m.id.groupId = :groupId and m.leftAt is null")
+    Set<UUID> findActiveMemberIds(@Param("groupId") UUID groupId);
 
     /** Active members of a group with their (possibly anonymised) display name, oldest first. */
     @Query("""

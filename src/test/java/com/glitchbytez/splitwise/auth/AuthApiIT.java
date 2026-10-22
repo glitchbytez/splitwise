@@ -42,7 +42,7 @@ class AuthApiIT extends ApiIntegrationTest {
 
             String hash = jdbc.queryForObject(
                     "select password_hash from users where email = 'alice@example.com'", String.class);
-            assertThat(hash).startsWith("$2a$12$").doesNotContain(DEFAULT_PASSWORD);
+            assertThat(hash).startsWith("$2a$").doesNotContain(DEFAULT_PASSWORD);
         }
 
         @Test

@@ -88,7 +88,7 @@ This follows the spec's error examples ("403 not a group member"). `GroupAccessS
 Leaving or removing a member requires a zero balance (spec 3.2). The group feature depends only on the `group.MemberBalances` interface, and `balance.BalanceService` implements it. There are no expenses or settlements yet, so every balance is genuinely zero and the implementation returns `true`. **Phase 4 must replace this with the real derivation** (spec 4.3), and should apply the same check to account deletion (D16). Unit tests already cover the 409 paths with a mocked `MemberBalances`.
 
 ### D22. Activity entries are written from Phase 2 onwards
-Membership and group lifecycle changes (`GROUP_CREATED`, `GROUP_UPDATED`, `GROUP_DELETED`, `MEMBER_ADDED`, `MEMBER_REMOVED`, `MEMBER_LEFT`) are written to `activity_log` in the same transaction as the change. `ActivityService.record` uses `Propagation.MANDATORY`, so it cannot be called outside one. Payloads hold ids only, never emails or names. The read endpoint `GET /api/groups/{id}/activity` comes with the expense work.
+Membership and group lifecycle changes (`GROUP_CREATED`, `GROUP_UPDATED`, `GROUP_DELETED`, `MEMBER_ADDED`, `MEMBER_REMOVED`, `MEMBER_LEFT`) are written to `activity_log` in the same transaction as the change. `ActivityService.record` uses `Propagation.MANDATORY`, so it cannot be called outside one. Payloads never contain emails or names; expense entries carry the description and amount so the feed can describe a change without loading the expense (D34). The read endpoint `GET /api/groups/{id}/activity` was added in Phase 3.
 
 ### D23. Deleting a group is a soft delete and is allowed with open balances
 The owner can always delete. The row and its history stay (`deleted_at`), and the group disappears for every member. Blocking deletion until everyone is settled is a possible v2 rule.
@@ -98,3 +98,40 @@ The owner can always delete. The row and its history stay (`deleted_at`), and th
 
 ### D25. JPA entity name `ExpenseGroup`
 `GROUP` is a reserved word in JPQL, so the `Group` class is registered as entity `ExpenseGroup`. The table is still `groups`.
+
+## Phase 3 — Expenses and split strategies
+
+### D26. Any member can create, edit or delete any expense in the group
+The spec only restricts *who can be involved* (payer and participants must be members). It doesn't say who may edit, so we follow Splitwise: every member can, and the activity log records who did what. Edits and deletes are soft (D27, spec 3.3), so nothing is lost.
+
+### D27. Lost-update protection: `version` in the PUT body plus JPA `@Version`
+`PUT /expenses/{id}` replaces the whole expense, so the client must send the `version` it last read. A missing version returns 400, and a different version returns `409 "changed by someone else"`. JPA `@Version` still catches the narrow race between that check and the commit (also 409). `updated_at` is set explicitly on every change rather than with `@UpdateTimestamp`. That way an edit that only changes shares, which live in child rows, still marks the expense dirty and increments the version. Deletes increment it too.
+
+### D28. Shares are updated in place, keyed by user
+On edit, shares for participants who remain are updated, removed participants' rows are deleted, and new participants are inserted. Clearing the collection and re-adding would fail: Hibernate flushes inserts before deletes, so a re-inserted row for the same user hits `unique (expense_id, user_id)`. `ExpenseTest` covers this.
+
+### D29. "Ordered by user id" means the UUID's string form
+Leftover cents (EQUAL) and tie-breaks (PERCENTAGE) follow `UUID.toString()` order. `UUID.compareTo` compares signed longs, so its order differs from the order a person sees when reading the ids, which would make the behaviour hard to explain or verify by hand.
+
+### D30. Category is a fixed enum
+`FOOD, GROCERIES, TRANSPORT, TRAVEL, ACCOMMODATION, RENT, UTILITIES, ENTERTAINMENT, SHOPPING, OTHER`, optional. A closed set makes filtering reliable (no "Food" vs "food " variants) and shows up in the OpenAPI docs. The column stays `varchar(50)`, so adding a value needs no migration.
+
+### D31. Amount limits and formats
+- Amounts are accepted as a JSON string (`"12.50"`, as in the spec example) or a number (`12.5`), with at most 2 decimals. They are always returned as strings with exactly 2 decimals.
+- At most 100,000,000.00 per expense and 100 participants. Percentage arithmetic (`amount × basis points`) and balance sums across many expenses then stay far below `long` overflow. The strategies also use overflow-checked maths as a second line of defence.
+- Percentages accept up to 2 decimals (stored as basis points) and must total exactly 100.00.
+
+### D32. Former members can't be added to new or edited expenses
+The payer and participants must be *active* members when the expense is created or edited. Historic expenses keep pointing at people who later left. That's safe because leaving requires a zero balance. Editing such an expense requires removing the former member from it.
+
+### D33. The balance rule now uses expenses (D21, partly resolved)
+`BalanceService` derives `net = paid − owed` from non-deleted expenses, so leaving or being removed with an expense balance returns 409. Settlements are added in Phase 4, together with the balance endpoints and the account-deletion check (D16).
+
+### D34. The activity feed lives under groups
+`GET /api/groups/{id}/activity` is served by `GroupService`, which checks membership and then asks `ActivityService` for a page. That keeps dependencies one-way (`group → activity`, `expense → group/activity`) with no package cycle. The order is fixed (newest first), so `?sort=` is rejected.
+
+### D35. BCrypt strength is a property; tests use the minimum
+`app.security.bcrypt-strength` defaults to 12 (spec: 10–12), and a unit test pins that default. Only the `test` profile sets 4. Hashing cost isn't what the integration tests verify, and strength 12 roughly tripled their runtime (≈170 s → ≈50 s).
+
+### D36. Expense list shape and sorting
+List items are summaries without shares, to avoid an N+1 query; fetch one expense to see its shares. Sort names are part of the API, not entity fields: `date` (default, newest first), `amount` and `createdAt`. They are translated to entity properties, and `createdAt desc, id` are appended as tie-breakers so paging is stable. Text search is case-insensitive, and the user's `%` and `_` are matched literally.

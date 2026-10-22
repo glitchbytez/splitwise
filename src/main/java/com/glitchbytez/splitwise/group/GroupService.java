@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import com.glitchbytez.splitwise.activity.ActivityResponse;
 import com.glitchbytez.splitwise.activity.ActivityService;
 import com.glitchbytez.splitwise.activity.ActivityType;
 import com.glitchbytez.splitwise.common.web.PageResponse;
@@ -87,6 +88,14 @@ public class GroupService {
         access.requireGroup(groupId).markDeleted(clock.instant());
         activity.record(groupId, callerId, ActivityType.GROUP_DELETED, ENTITY_TYPE, groupId, Map.of());
         log.info("User {} deleted group {}", callerId, groupId);
+    }
+
+    /** The group's activity feed, newest first (spec 3.6). */
+    @Transactional(readOnly = true)
+    public PageResponse<ActivityResponse> activity(UUID groupId, UUID callerId, Pageable pageable) {
+        access.requireMember(groupId, callerId);
+        Pageables.requireSortableBy(pageable, Set.of());
+        return activity.feed(groupId, pageable.getPageNumber(), pageable.getPageSize());
     }
 
     private GroupResponse toResponse(Group group, GroupRole callerRole) {
