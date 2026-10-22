@@ -3,6 +3,7 @@ package com.glitchbytez.splitwise.group;
 import java.net.URI;
 import java.util.UUID;
 
+import com.glitchbytez.splitwise.activity.ActivityResponse;
 import com.glitchbytez.splitwise.auth.CurrentUserId;
 import com.glitchbytez.splitwise.common.web.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -70,6 +71,16 @@ class GroupController {
     GroupResponse update(@CurrentUserId UUID userId, @PathVariable UUID groupId,
                          @Valid @RequestBody UpdateGroupRequest request) {
         return groupService.update(groupId, userId, request);
+    }
+
+    @GetMapping("/{groupId}/activity")
+    @Operation(summary = "Group activity feed, newest first",
+            description = "Expense, membership and group changes. Paginated; the order is fixed (no sort parameter).")
+    @ApiResponse(responseCode = "403", description = "Not a member of this group")
+    @ApiResponse(responseCode = "404", description = "Group not found")
+    PageResponse<ActivityResponse> activity(@CurrentUserId UUID userId, @PathVariable UUID groupId,
+                                            @ParameterObject @PageableDefault(size = 20) Pageable pageable) {
+        return groupService.activity(groupId, userId, pageable);
     }
 
     @DeleteMapping("/{groupId}")
